@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>卫星边缘采集器 · 三色标记清扫演练</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header>
+  <h1>卫星边缘采集器 · 缓存回收演练台</h1>
+  <div class="sub">增量三色标记-清扫（Dijkstra 屏障）· 事件溯源 · 重开恢复一致性</div>
+</header>
+
+<main>
+  <section class="toolbar">
+    <label>演练：
+      <select id="drill-select"></select>
+    </label>
+    <span id="drill-name" class="drill-name"></span>
+    <span class="spacer"></span>
+    <details class="import">
+      <summary>导入自定义演练 JSON</summary>
+      <textarea id="import-json" rows="8" spellcheck="false"
+        placeholder='{"id":"x","objects":["A","B",...],"roots":["A"],"edges":{"A":["B"]},"events":[]}'></textarea>
+      <button id="import-btn">导入</button>
+      <span id="import-msg" class="msg"></span>
+    </details>
+  </section>
+
+  <section class="replay-bar">
+    <button id="btn-first">⏮ 初始</button>
+    <button id="btn-prev">◀ 上一步</button>
+    <button id="btn-next">下一步 ▶</button>
+    <button id="btn-play">整段回放 ▶▶</button>
+    <button id="btn-last">终点 ⏭</button>
+    <input type="range" id="frame-slider" min="0" step="1" value="0">
+    <span id="frame-label"></span>
+  </section>
+
+  <div class="banner" id="reject-banner" hidden></div>
+  <div class="banner ok" id="recovery-banner" hidden></div>
+
+  <section class="grid">
+    <div class="card graph-card">
+      <h2>存活图 / 颜色</h2>
+      <div class="legend">
+        <i class="dot white"></i>白 white
+        <i class="dot gray"></i>灰 gray
+        <i class="dot black"></i>黑 black
+        <i class="root-mark">◆</i>根
+        <i class="dead">虚框</i>已回收
+      </div>
+      <svg id="graph" viewBox="0 0 520 380"></svg>
+    </div>
+
+    <div class="card">
+      <h2>状态</h2>
+      <table class="kv">
+        <tr><th>阶段</th><td id="st-phase"></td></tr>
+        <tr><th>灰队列</th><td id="st-queue"></td></tr>
+        <tr><th>根集合</th><td id="st-roots"></td></tr>
+        <tr><th>存活</th><td id="st-alive"></td></tr>
+        <tr><th>已回收</th><td id="st-reclaimed"></td></tr>
+      </table>
+      <h3>各对象颜色</h3>
+      <div id="st-colors" class="chips"></div>
+      <h3>当前事件结果</h3>
+      <pre id="st-result" class="code"></pre>
+    </div>
+
+    <div class="card">
+      <h2>存活证据链</h2>
+      <ol id="evidence" class="evidence"></ol>
+    </div>
+
+    <div class="card">
+      <h2>事件账本（稳定标识）</h2>
+      <ol id="ledger" class="ledger"></ol>
+    </div>
+  </section>
+
+  <section class="grid two">
+    <div class="card">
+      <h2>投递事件（重复 ID 回放原结果）</h2>
+      <div class="deliver">
+        <label>event_id <input id="ev-id" type="text" placeholder="evt-100"></label>
+        <label>类型
+          <select id="ev-type">
+            <option>start_mark</option>
+            <option>step</option>
+            <option>sweep</option>
+            <option>set_edge</option>
+            <option>set_root</option>
+            <option>reopen</option>
+          </select>
+        </label>
+        <label>payload
+          <input id="ev-payload" type="text" placeholder='{"src":"A","old_dst":"B","new_dst":"C"}'>
+        </label>
+        <button id="deliver-btn">投递</button>
+        <span id="deliver-msg" class="msg"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>中断恢复比对</h2>
+      <button id="recovery-btn">计算“连续运行 vs 标记中途重开”裁决</button>
+      <pre id="recovery-out" class="code tall"></pre>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

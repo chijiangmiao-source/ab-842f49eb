@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>卫星边缘采集器 · 三色标记-清扫演练</title>
+<style>
+  :root { --w:#e5e7eb; --g:#f59e0b; --b:#10b981; --r:#ef4444; --ink:#0f172a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.55 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; color:var(--ink); background:#f1f5f9; }
+  header { background:#0f172a; color:#fff; padding:14px 20px; }
+  header h1 { margin:0; font-size:17px; }
+  header .sub { opacity:.75; font-size:12px; margin-top:2px; }
+  .wrap { max-width:1280px; margin:0 auto; padding:16px; display:grid; grid-template-columns:360px 1fr; gap:14px; }
+  .card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px; margin-bottom:14px; }
+  .card h2 { margin:0 0 10px; font-size:14px; display:flex; align-items:center; gap:8px; }
+  label { font-size:12px; color:#475569; display:block; margin:8px 0 3px; }
+  input,textarea,select { width:100%; padding:7px 9px; border:1px solid #cbd5e1; border-radius:6px; font:inherit; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; }
+  textarea { min-height:90px; resize:vertical; }
+  button { background:#2563eb; color:#fff; border:0; border-radius:6px; padding:7px 13px; font-size:13px; cursor:pointer; margin:6px 6px 0 0; }
+  button.sec { background:#475569; } button.warn { background:#b45309; } button.ghost { background:#e2e8f0; color:#0f172a; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11.5px; font-weight:600; }
+  .pill.white { background:var(--w); color:#334155; } .pill.gray { background:var(--g); color:#422006; } .pill.black { background:#065f46; color:#fff; }
+  .phase { padding:2px 10px; border-radius:999px; font-size:12px; background:#e0e7ff; color:#3730a3; font-weight:600; }
+  .obj { display:inline-flex; align-items:center; gap:6px; border:1px solid #cbd5e1; border-radius:8px; padding:3px 9px; margin:3px; font-family:ui-monospace,monospace; background:#fff; }
+  .dot { width:11px; height:11px; border-radius:50%; display:inline-block; border:1px solid rgba(0,0,0,.25); }
+  .dot.white { background:#fff; } .dot.gray { background:var(--g); } .dot.black { background:var(--b); }
+  .reclaimed { text-decoration:line-through; opacity:.55; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td { text-align:left; padding:5px 8px; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+  th { color:#64748b; font-weight:600; font-size:12px; background:#f8fafc; position:sticky; top:0; }
+  .mono { font-family:ui-monospace,monospace; font-size:12px; }
+  .ok { color:#047857; font-weight:700; } .bad { color:#dc2626; font-weight:700; }
+  #firstReject { display:none; border-left:4px solid var(--r); background:#fef2f2; padding:9px 12px; border-radius:6px; margin-bottom:12px; font-size:13px; }
+  #safeBanner { border-radius:8px; padding:10px 14px; font-weight:700; margin-bottom:12px; }
+  #safeBanner.safe { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+  #safeBanner.warn { background:#fffbeb; color:#92400e; border:1px solid #fde68a; }
+  #safeBanner.idle { background:#f8fafc; color:#475569; border:1px solid #e2e8f0; }
+  .small { font-size:12px; color:#64748b; }
+  pre.j { background:#0f172a; color:#e2e8f0; padding:10px; border-radius:8px; font-size:11.5px; overflow:auto; max-height:240px; margin:6px 0 0; }
+  .tag-acc { color:#047857; font-weight:700; } .tag-rej { color:#dc2626; font-weight:700; } .tag-dup { color:#b45309; font-weight:700; }
+  .scroll { max-height:280px; overflow:auto; }
+  @media (max-width:980px){ .wrap{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>卫星边缘采集器 · 不中断采样的三色标记-清扫回收演练</h1>
+  <div class="sub">SATB 屏障保留旧目标/新白色目标 · 稳定排序步进 · 灰队列非空禁止清扫 · 事件稳定标识去重 · 中断恢复与连续运行一致</div>
+</header>
+
+<div class="wrap">
+  <div>
+    <div class="card">
+      <h2>① 导入演练规格</h2>
+      <label>演练 ID（稳定标识）</label>
+      <input id="drillId" value="demo-1">
+      <label>spec：2–24 个对象、根集合、边（事件通过下方投递，至多 48 项）</label>
+      <textarea id="spec" style="min-height:150px">{
+  "objects": ["A", "B", "C", "D", "E"],
+  "edges": {"A": ["B"], "B": ["C"], "D": ["E"]},
+  "roots": ["A", "D"]
+}</textarea>
+      <div class="row">
+        <button onclick="createDrill()">创建演练</button>
+        <button class="ghost" onclick="loadDrill()">载入已有</button>
+      </div>
+      <div class="small" id="drills"></div>
+    </div>
+
+    <div class="card">
+      <h2>② 投递单个事件</h2>
+      <label>事件 ID（稳定标识，重复投递回放原结果）</label>
+      <input id="evId" value="e1">
+      <label>类型</label>
+      <select id="evType">
+        <option value="start">start 启动标记</option>
+        <option value="step">step 标记步进（一个稳定排序灰对象）</option>
+        <option value="mutate_edge">mutate_edge 改写边</option>
+        <option value="mutate_root">mutate_root 改写根</option>
+        <option value="sweep">sweep 清扫</option>
+        <option value="reopen">reopen 标记中途重开（中断恢复）</option>
+      </select>
+      <label>payload（start/step/sweep/reopen 请留 {}）</label>
+      <textarea id="evPayload">{}</textarea>
+      <div class="row">
+        <button onclick="sendEvent()">投递</button>
+        <button class="sec" onclick="autoStep()">连续步进至灰队列清空</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>③ 整段回放（可逐步/整段）</h2>
+      <textarea id="batch" style="min-height:120px">[
+ {"id":"e1","type":"start","payload":{}},
+ {"id":"e2","type":"step","payload":{}}
+]</textarea>
+      <div class="row">
+        <button onclick="replayAll()">整段回放</button>
+        <button class="sec" id="stepReplayBtn" onclick="replayOne()">逐步回放下一事件</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>④ 一键验收场景（实际观察三类业务结果）</h2>
+      <button class="warn" onclick="demoBarrier()">屏障保留</button>
+      <button class="warn" onclick="demoIllegalSweep()">非法清扫拒绝</button>
+      <button class="warn" onclick="demoRecovery()">中断恢复一致性</button>
+      <div class="small" style="margin-top:6px">
+        场景三将构建 <b>continuous-*</b>（连续运行）与 <b>interrupted-*</b>（中途 reopen + 进程恢复）两个演练并比对存活裁决。
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div id="firstReject"></div>
+    <div id="safeBanner" class="idle">尚未载入演练</div>
+
+    <div class="card">
+      <h2>颜色与对象 <span id="phaseTag"></span></h2>
+      <div id="objects"></div>
+      <div class="small" style="margin-top:6px">
+        <span class="dot white"></span> white 未标记
+        <span class="dot gray"></span> gray 待处理
+        <span class="dot black"></span> black 已扫描存活
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>灰队列（稳定排序，每次 step 仅处理队首一个）</h2>
+      <div id="grayq" class="mono"></div>
+    </div>
+
+    <div class="card">
+      <h2>存活图 / 边与根</h2>
+      <div id="graph"></div>
+    </div>
+
+    <div class="card">
+      <h2>屏障保留证据（旧目标 &amp; 新接入白色目标）</h2>
+      <div class="scroll"><table id="barrierTbl"><thead><tr><th>事件 ID</th><th>对象</th><th>保留原因</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div class="card">
+      <h2>事件流水（accepted / duplicate / rejected）</h2>
+      <div class="scroll"><table id="histTbl"><thead><tr><th>#</th><th>ID</th><th>类型</th><th>状态</th><th>关键结果</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div class="card">
+      <h2>安全报告（审查员视图）</h2>
+      <pre id="safetyJson" class="j"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+let curId = null, lastView = null;
+const $ = id => document.getElementById(id);
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return { code: r.status, body: await r.json() };
+}
+const postJson = (path, body) => api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+
+function flashReject(reasons, id) {
+  if (!reasons || !reasons.length) return;
+  const el = $('firstReject');
+  el.style.display = 'block';
+  el.innerHTML = '<b>⛔ 首个拒因' + (id ? '（事件 ' + esc(id) + '）' : '') + '：</b>' + esc(reasons[0]);
+}
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const pill = c => '<span class="pill ' + c + '">' + c + '</span>';
+const dot  = c => '<span class="dot ' + c + '"></span>';
+
+async function createDrill() {
+  curId = $('drillId').value.trim();
+  let spec;
+  try { spec = JSON.parse($('spec').value); }
+  catch (e) { flashReject(['spec JSON 解析失败：' + e.message]); return; }
+  const {code, body} = await postJson('/api/drills', {id: curId, spec});
+  if (code === 422) { flashReject(body.reasons); return; }
+  $('firstReject').style.display = 'none';
+  render(body); listDrills();
+}
+
+async function loadDrill() {
+  curId = $('drillId').value.trim();
+  const {code, body} = await api('/api/drills/' + encodeURIComponent(curId));
+  if (code === 404) { flashReject([body.error]); return; }
+  $('firstReject').style.display = 'none';
+  render(body);
+}
+
+async function listDrills() {
+  const {body} = await api('/api/drills');
+  $('drills').innerHTML = '已有演练：' + (body.drills.map(d =>
+    `<a href="#" onclick="document.getElementById('drillId').value='${esc(d.id)}';loadDrill();return false;">${esc(d.id)}</a>`).join('，') || '（无）');
+}
+
+async function sendEvent() {
+  if (!curId) return flashReject(['请先创建或载入演练']);
+  let payload;
+  try { payload = JSON.parse($('evPayload').value || '{}'); }
+  catch (e) { return flashReject(['payload JSON 解析失败：' + e.message]); }
+  const ev = {id: $('evId').value.trim(), type: $('evType').value, payload};
+  const {code, body} = await postJson(`/api/drills/${encodeURIComponent(curId)}/events`, ev);
+  if (body.status === 'rejected') { flashReject(body.reasons, ev.id); }
+  else { $('firstReject').style.display = 'none'; if (body.drill) render(body.drill); }
+}
+
+async function autoStep() {
+  if (!curId) return;
+  for (let i = 0; i < 60; i++) {
+    const ev = {id: 'auto-step-' + Date.now() + '-' + i, type: 'step', payload: {}};
+    const {body} = await postJson(`/api/drills/${encodeURIComponent(curId)}/events`, ev);
+    if (body.drill) render(body.drill);
+    if (body.status !== 'accepted' || body.drill?.state.gray_remaining === 0
+        || (body.drill && body.drill.state.phase !== 'mark')) break;
+  }
+}
+
+let batchEvents = [];
+async function replayAll() {
+  if (!curId) return flashReject(['请先创建或载入演练']);
+  try { batchEvents = JSON.parse($('batch').value); }
+  catch (e) { return flashReject(['批量事件 JSON 解析失败：' + e.message]); }
+  const {body} = await postJson(`/api/drills/${encodeURIComponent(curId)}/replay`, {events: batchEvents});
+  const firstRej = body.results.find(r => r.status === 'rejected');
+  if (firstRej) flashReject(firstRej.reasons, firstRej.id);
+  else $('firstReject').style.display = 'none';
+  if (body.drill) render(body.drill);
+}
+async function replayOne() {
+  if (!batchEvents.length) {
+    try { batchEvents = JSON.parse($('batch').value); }
+    catch (e) { return flashReject(['批量事件 JSON 解析失败：' + e.message]); }
+  }
+  const ev = batchEvents.shift();
+  if (!ev) return;
+  const {body} = await postJson(`/api/drills/${encodeURIComponent(curId)}/events`, ev);
+  if (body.status === 'rejected') flashReject(body.reasons, ev.id);
+  else $('firstReject').style.display = 'none';
+  if (body.drill) render(body.drill);
+}
+
+function render(v) {
+  lastView = v;
+  const s = v.state, sf = v.safety;
+  // 安全横幅
+  const banner = $('safeBanner');
+  if (sf.cycle_safe === true) {
+    banner.className = 'safe';
+    banner.textContent = `✅ 第 ${sf.cycle} 周期安全：回收 ${JSON.stringify(sf.last_reclaimed)} 中无任何快照根集合可达对象`;
+  } else if (sf.cycle_safe === false) {
+    banner.className = 'warn';
+    banner.textContent = '⛔ 周期不安全：违规回收 ' + JSON.stringify(sf.violations);
+  } else if (s.phase === 'mark') {
+    banner.className = 'warn';
+    banner.textContent = `标记进行中（第 ${s.cycle} 轮），灰队列剩余 ${s.gray_remaining}，禁止清扫`;
+  } else {
+    banner.className = 'idle';
+    banner.textContent = s.phase === 'sweep' ? '清扫完成稳态（可 reopen 仅在标记中途；可重新 start 下一轮）' : '空闲：请先 start';
+  }
+  $('phaseTag').innerHTML = '<span class="phase">' + esc(s.phase) + ' · cycle ' + s.cycle + '</span>';
+
+  const freed = new Set(s.freed);
+  $('objects').innerHTML = s.objects.map(o => {
+    const c = s.colors[o] || 'white';
+    return `<span class="obj ${freed.has(o) ? 'reclaimed' : ''}">${dot(c)}${esc(o)} ${pill(c)}${freed.has(o) ? ' 已回收' : ''}</span>`;
+  }).join(' ');
+
+  $('grayq').innerHTML = s.gray_queue.length
+    ? s.gray_queue.map((o, i) => `<span class="obj">${i === 0 ? '▶ ' : ''}${dot('gray')}${esc(o)}</span>`).join(' ')
+    : '<span class="small">（空）</span>';
+
+  const edges = s.edges || {};
+  const rootSet = new Set(s.roots);
+  const rows = s.objects.filter(o => !freed.has(o)).map(o => {
+    const tgts = (edges[o] || []).map(t => `<span class="obj" style="padding:1px 7px">${esc(t)}</span>`).join(' ') || '<span class="small">∅</span>';
+    return `<tr><td class="mono"><b>${esc(o)}</b>${rootSet.has(o) ? ' 🌱根' : ''}</td><td>${tgts}</td></tr>`;
+  }).join('');
+  $('graph').innerHTML = `<table><thead><tr><th>对象</th><th>出边（存活图）</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="small" style="margin-top:6px">快照根：${JSON.stringify(s.snapshot_roots)} ｜ 存活裁决 live：<b class="ok">${JSON.stringify(s.live)}</b> ｜ 最近回收：<b class="bad">${JSON.stringify(s.reclaimed)}</b></div>`;
+
+  $('barrierTbl').querySelector('tbody').innerHTML = (s.barrier_retentions || []).map(b =>
+    `<tr><td class="mono">${esc(b.event_id)}</td><td class="mono">${esc(b.object)}</td><td>${esc(b.reason)}</td></tr>`).join('')
+    || '<tr><td colspan="3" class="small">（暂无屏障动作）</td></tr>';
+
+  $('histTbl').querySelector('tbody').innerHTML = v.events.map((h, i) => {
+    const r = h.result || {};
+    const key = r.processed ? '处理=' + r.processed
+      : r.reclaimed ? '回收=' + JSON.stringify(r.reclaimed)
+      : r.barrier_retained ? '屏障保留=' + JSON.stringify(r.barrier_retained)
+      : r.resumed_cycle ? '恢复 cycle=' + r.resumed_cycle
+      : r.cycle ? 'cycle=' + r.cycle : '';
+    const cls = r.status === 'accepted' ? 'tag-acc' : r.status === 'duplicate' ? 'tag-dup' : 'tag-rej';
+    return `<tr><td>${i+1}</td><td class="mono">${esc(h.id)}</td><td>${esc(h.type)}</td><td class="${cls}">${esc(r.status)}</td><td class="small mono">${esc(key)}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="small">（无）</td></tr>';
+  // 拒绝流水（含首个拒因）
+  if (s.rejected && s.rejected.length) {
+    const more = s.rejected.map(x => `<tr><td class="mono">${esc(x.id)}</td><td>${esc(x.type)}</td><td class="bad">${esc(x.reasons[0])}</td></tr>`).join('');
+    $('histTbl').querySelector('tbody').insertAdjacentHTML('beforeend',
+      `<tr><td colspan="5" class="small" style="background:#fef2f2"><b>本周期拒绝（不持久化进恢复日志）：</b></td></tr>${more}`);
+  }
+  $('safetyJson').textContent = JSON.stringify(sf, null, 2);
+}
+
+// --------------------------------------------------------------- 演示场景
+const SPEC = (objects, edges, roots) => ({objects, edges, roots});
+
+async function freshDrill(id, spec) {
+  const {code, body} = await postJson('/api/drills', {id, spec});
+  if (code === 422) throw new Error(body.reasons.join('; '));
+  return body;
+}
+async function ev(d, id, type, payload={}) {
+  const r = await postJson(`/api/drills/${encodeURIComponent(d)}/events`, {id, type, payload});
+  return r.body;
+}
+
+async function demoBarrier() {
+  // A->B->C、D->E 快照存活，F 新接入，G 标记中新根，H 始终不可达。
+  // 扫描 A 后把 A 的边由 B 改写为 F：旧目标 B 与新白色目标 F 均被屏障保留；
+  // 标记中把 G 新增为根：新接入白色根 G 被保留；H 最终被清扫。
+  const id = 'barrier-' + Date.now();
+  $('drillId').value = id; curId = id;
+  const spec = SPEC(['A','B','C','D','E','F','G','H'],
+                    {A:['B'], B:['C'], D:['E']}, ['A','D']);
+  let v = await freshDrill(id, spec);
+  await ev(id,'m1','start');
+  await ev(id,'m2','step');                                         // A 黑，B 灰
+  const r3 = await ev(id,'m3','mutate_edge', {src:'A', action:'set', targets:['F']});
+  const r4 = await ev(id,'m4','mutate_root', {action:'add', roots:['G']});
+  await autoStep2(id);
+  const r5 = await ev(id,'m9','sweep');
+  v = (await api('/api/drills/' + id)).body; render(v);
+  flashBarrier(id, r3, r4, r5);
+}
+async function autoStep2(id) {
+  for (let i=0;i<30;i++) {
+    const r = await ev(id,'ms-'+i,'step');
+    if (r.status !== 'accepted') break;
+  }
+}
+function flashBarrier(id, r3, r4, r5) {
+  const el = $('firstReject');
+  el.style.display = 'block';
+  el.style.background = '#ecfdf5'; el.style.borderLeftColor = '#10b981';
+  el.innerHTML = `<b>✅ 屏障保留观察（${esc(id)}）</b><br>
+    改边 A→F：被断开的旧目标 B 与新接入白色目标 F 同时保留：<span class="mono">${esc(JSON.stringify(r3.barrier_retained))}</span><br>
+    新增根 G：新接入白色根被屏障保留：<span class="mono">${esc(JSON.stringify(r4.barrier_retained))}</span><br>
+    清扫仅回收不可达白色对象：<span class="mono bad">${esc(JSON.stringify(r5.reclaimed))}</span>，
+    存活裁决：<b class="ok">${esc(JSON.stringify(r5.live))}</b>（B/C/D/E 快照存活，F/G 屏障存活，仅 H 被回收）`;
+  setTimeout(()=>{el.style.background='#fef2f2';el.style.borderLeftColor='var(--r)';}, 600000);
+}
+
+async function demoIllegalSweep() {
+  // A->B 存活，C 不可达：观察四类拒绝且均不污染恢复日志
+  const id = 'ilsweep-' + Date.now();
+  $('drillId').value = id; curId = id;
+  const spec = SPEC(['A','B','C'], {A:['B']}, ['A']);
+  await freshDrill(id, spec);
+  const r0 = await ev(id,'x0','sweep');                 // 未启动就清扫
+  await ev(id,'x1','start');
+  const r1 = await ev(id,'x2','sweep');                 // 灰队列非空清扫
+  await ev(id,'x3','step');                             // A
+  const r2 = await ev(id,'x3','step', {extra:1});       // 同 ID 不同载荷
+  await ev(id,'x4','step');                             // B，灰队列清空
+  const sw = await ev(id,'x5','sweep');                 // C 被回收
+  const r3 = await ev(id,'x6','mutate_edge', {src:'A', action:'add', targets:['C']}); // 引用已回收
+  const v = (await api('/api/drills/' + id)).body; render(v);
+  const el = $('firstReject');
+  el.style.display='block'; el.style.background='#fef2f2'; el.style.borderLeftColor='var(--r)';
+  el.innerHTML = `<b>⛔ 非法操作拒绝观察（${esc(id)}，均拒绝且未写入恢复日志）</b><br>
+    未 start 清扫：<span class="bad">${esc(r0.reasons[0])}</span><br>
+    灰队列未清空清扫：<span class="bad">${esc(r1.reasons[0])}</span><br>
+    同 ID 不同载荷：<span class="bad">${esc(r2.reasons[0])}</span><br>
+    引用已回收对象 C（上一轮已回收 ${esc(JSON.stringify(sw.reclaimed))}）：<span class="bad">${esc(r3.reasons[0])}</span>`;
+}
+
+async function demoRecovery() {
+  // A->B->C 存活，D 标记中新接入，E 不可达；中断（reopen + 重建）后须与连续运行裁决一致
+  const spec = SPEC(['A','B','C','D','E'], {A:['B'], B:['C']}, ['A']);
+  const base = 'rec-' + Date.now();
+  const cid = base + '-continuous', iid = base + '-interrupted';
+  // 连续运行
+  await freshDrill(cid, spec);
+  const cevents = [
+    ['1','start'], ['2','step'],
+    ['3','mutate_edge',{src:'A',action:'set',targets:['D']}],
+    ['4','step'], ['5','step'], ['6','step'], ['7','sweep']
+  ];
+  for (const [i,t,p={}] of cevents) await ev(cid, i, t, p);
+  const cv = (await api('/api/drills/' + cid)).body;
+
+  // 中断恢复：同样序列，中途 reopen 并调用 recover 重建（从持久化事件恢复）
+  await freshDrill(iid, spec);
+  const iprefix = [
+    ['1','start'], ['2','step'],
+    ['3','mutate_edge',{src:'A',action:'set',targets:['D']}],
+    ['4','step'], ['5','reopen']
+  ];
+  for (const [i,t,p={}] of iprefix) await ev(iid, i, t, p);
+  const rv = await postJson('/api/drills/' + encodeURIComponent(iid) + '/recover', {});
+  const cont = rv.body;
+  const after = [['6','step'], ['7','step'], ['8','sweep']];
+  for (const [i,t,p={}] of after) await ev(iid, i, t, p);
+  const iv = (await api('/api/drills/' + iid)).body;
+  $('drillId').value = iid; curId = iid; render(iv);
+
+  const same = JSON.stringify(cv.state.live) === JSON.stringify(iv.state.live)
+    && JSON.stringify(cv.state.reclaimed) === JSON.stringify(iv.state.reclaimed);
+  const el = $('firstReject');
+  el.style.display='block';
+  el.style.background = same ? '#ecfdf5' : '#fef2f2';
+  el.style.borderLeftColor = same ? '#10b981' : 'var(--r)';
+  el.innerHTML = `<b>${same?'✅':'⛔'} 中断恢复一致性观察</b><br>
+    连续运行 ${esc(cid)}：live=${esc(JSON.stringify(cv.state.live))} reclaimed=${esc(JSON.stringify(cv.state.reclaimed))}<br>
+    中断重开 ${esc(iid)}：reopen/重建时灰队列=${esc(JSON.stringify(cont?.state?.gray_queue ?? []))}，恢复后 live=${esc(JSON.stringify(iv.state.live))} reclaimed=${esc(JSON.stringify(iv.state.reclaimed))}<br>
+    裁决${same?'<b class="ok">完全一致</b>':'<b class="bad">不一致！</b>'}`;
+}
+
+listDrills();
+</script>
+</body>
+</html>

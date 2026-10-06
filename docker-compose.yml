@@ -1,0 +1,30 @@
+services:
+  # 边缘采集器主服务：页面与 /health 从可配置宿主端口 HOST_PORT 访问
+  collector:
+    build: .
+    image: edge-collector:latest
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+      DATA_DIR: /data
+    ports:
+      # 宿主端口可配置：HOST_PORT=9090 docker compose up -d
+      - "${HOST_PORT:-8080}:8080"
+    volumes:
+      - collector-data:/data
+
+  # 验收服务：运行代码测试、构建检查、API/HTTP 冒烟并实测三类业务结果，
+  # 完成后以退出码报告结论（0=全部通过）。
+  # 执行：docker compose run --rm verify
+  verify:
+    build: .
+    image: edge-collector:latest
+    command: ["python", "scripts/acceptance.py", "--base", "http://collector:8080"]
+    depends_on:
+      collector:
+        condition: service_healthy
+    volumes:
+      - collector-data:/data
+
+volumes:
+  collector-data:
